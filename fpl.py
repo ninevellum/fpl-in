@@ -1,6 +1,12 @@
 """Fantasy Premier League data tools."""
 import httpx
 
+def get_player_lookup():
+    """Return a dict mapping player_id -> web_name for all FPL players."""
+    url = "https://fantasy.premierleague.com/api/bootstrap-static/"
+    data = httpx.get(url).json()
+    return {p["id"]: p["web_name"] for p in data["elements"]}
+
 def current_gameweek():
     """Return the current gameweek number from FPL's bootstrap data."""
     url = "https://fantasy.premierleague.com/api/bootstrap-static/"
@@ -31,9 +37,12 @@ def top_players(n=10):
 
 if __name__ == "__main__":
     gw = current_gameweek()
-    print(f"Current gameweek: {gw}")
+    players = get_player_lookup()
 
     managers = get_league_managers(314)
     first_manager_id, team_name, player_name = managers[0]
     picks = get_manager_picks(first_manager_id, gw)
-    print(f"{team_name} ({player_name}) has {len(picks)} players: {picks}")
+
+    print(f"Gameweek {gw} — {team_name} ({player_name}):")
+    for player_id in picks:
+        print(f"  {players[player_id]}")
