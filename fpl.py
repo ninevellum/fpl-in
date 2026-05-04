@@ -50,9 +50,28 @@ if __name__ == "__main__":
     gw = current_gameweek()
     players = get_player_lookup()
 
-    counts = league_ownership(314, gw)
+    league_id = 314
+    counts = league_ownership(league_id, gw)
+    total_managers = len(get_league_managers(league_id))
 
-    print(f"Gameweek {gw} — Top 10 most-owned in league:")
-    sorted_counts = sorted(counts.items(), key=lambda x: x[1], reverse=True)
-    for player_id, count in sorted_counts[:10]:
-        print(f"  {count:>3}  {players[player_id]}")
+    differentials = []
+    template = []
+    for player_id, count in counts.items():
+        ownership_pct = count / total_managers * 100
+        if 5 <= ownership_pct < 25:
+            differentials.append((players[player_id], count, ownership_pct))
+        elif ownership_pct >= 70:
+            template.append((players[player_id], count, ownership_pct))
+
+    differentials.sort(key=lambda x: x[1], reverse=True)
+    template.sort(key=lambda x: x[1], reverse=True)
+
+    print(f"Gameweek {gw} — League {league_id} ({total_managers} managers)\n")
+
+    print(f"Template players (≥70% owned):")
+    for name, count, pct in template:
+        print(f"  {count:>3}/{total_managers}  {pct:>5.1f}%  {name}")
+
+    print(f"\nDifferentials (5-25% owned):")
+    for name, count, pct in differentials:
+        print(f"  {count:>3}/{total_managers}  {pct:>5.1f}%  {name}")
