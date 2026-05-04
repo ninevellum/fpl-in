@@ -22,6 +22,17 @@ def get_manager_picks(manager_id, gameweek):
     data = httpx.get(url).json()
     return [pick["element"] for pick in data["picks"]]
 
+def league_ownership(league_id, gameweek):
+    """For each player, count how many managers in the league own them.
+    Returns dict mapping player_id -> count."""
+    managers = get_league_managers(league_id)
+    counts = {}
+    for manager_id, _, _ in managers:
+        picks = get_manager_picks(manager_id, gameweek)
+        for player_id in picks:
+            counts[player_id] = counts.get(player_id, 0) + 1
+    return counts
+
 def get_league_managers(league_id):
     """Fetch managers in a classic mini-league. Returns list of (manager_id, team_name, player_name) tuples."""
     url = f"https://fantasy.premierleague.com/api/leagues-classic/{league_id}/standings/"
@@ -39,10 +50,9 @@ if __name__ == "__main__":
     gw = current_gameweek()
     players = get_player_lookup()
 
-    managers = get_league_managers(314)
-    first_manager_id, team_name, player_name = managers[0]
-    picks = get_manager_picks(first_manager_id, gw)
+    counts = league_ownership(314, gw)
 
-    print(f"Gameweek {gw} — {team_name} ({player_name}):")
-    for player_id in picks:
-        print(f"  {players[player_id]}")
+    print(f"Gameweek {gw} — Top 10 most-owned in league:")
+    sorted_counts = sorted(counts.items(), key=lambda x: x[1], reverse=True)
+    for player_id, count in sorted_counts[:10]:
+        print(f"  {count:>3}  {players[player_id]}")
