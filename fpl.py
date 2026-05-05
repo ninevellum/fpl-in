@@ -1,11 +1,28 @@
 """Fantasy Premier League data tools."""
 import httpx
 
+
 def get_player_lookup():
     """Return a dict mapping player_id -> web_name for all FPL players."""
     url = "https://fantasy.premierleague.com/api/bootstrap-static/"
     data = httpx.get(url).json()
     return {p["id"]: p["web_name"] for p in data["elements"]}
+
+
+def get_league_managers(league_id):
+    """Fetch managers in a classic mini-league. Returns list of (manager_id, team_name, player_name) tuples."""
+    url = f"https://fantasy.premierleague.com/api/leagues-classic/{league_id}/standings/"
+    data = httpx.get(url).json()
+    results = data["standings"]["results"]
+    return [(m["entry"], m["entry_name"], m["player_name"]) for m in results]
+
+
+def get_manager_picks(manager_id, gameweek):
+    """Return list of player IDs in this manager's squad for the given gameweek."""
+    url = f"https://fantasy.premierleague.com/api/entry/{manager_id}/event/{gameweek}/picks/"
+    data = httpx.get(url).json()
+    return [pick["element"] for pick in data["picks"]]
+
 
 def current_gameweek():
     """Return the current gameweek number from FPL's bootstrap data."""
@@ -16,11 +33,6 @@ def current_gameweek():
             return event["id"]
     return None
 
-def get_manager_picks(manager_id, gameweek):
-    """Return list of player IDs in this manager's squad for the given gameweek."""
-    url = f"https://fantasy.premierleague.com/api/entry/{manager_id}/event/{gameweek}/picks/"
-    data = httpx.get(url).json()
-    return [pick["element"] for pick in data["picks"]]
 
 def league_ownership(league_id, gameweek):
     """For each player, count how many managers in the league own them.
@@ -33,18 +45,14 @@ def league_ownership(league_id, gameweek):
             counts[player_id] = counts.get(player_id, 0) + 1
     return counts
 
-def get_league_managers(league_id):
-    """Fetch managers in a classic mini-league. Returns list of (manager_id, team_name, player_name) tuples."""
-    url = f"https://fantasy.premierleague.com/api/leagues-classic/{league_id}/standings/"
-    data = httpx.get(url).json()
-    results = data["standings"]["results"]
-    return [(m["entry"], m["entry_name"], m["player_name"]) for m in results]
 
 def top_players(n=10):
-    url = f"https://fantasy.premierleague.com/api/bootstrap-static/"
+    """Return top n FPL players by total points."""
+    url = "https://fantasy.premierleague.com/api/bootstrap-static/"
     data = httpx.get(url).json()
     players = sorted(data["elements"], key=lambda p: p["total_points"], reverse=True)
     return [(p["web_name"], p["total_points"]) for p in players[:n]]
+
 
 if __name__ == "__main__":
     gw = current_gameweek()
@@ -66,12 +74,12 @@ if __name__ == "__main__":
     differentials.sort(key=lambda x: x[1], reverse=True)
     template.sort(key=lambda x: x[1], reverse=True)
 
-    print(f"Gameweek {gw} — League {league_id} ({total_managers} managers)\n")
+    print(f"Gameweek {gw} — League {league_id} ({total_managers} managers)")
 
-    print(f"Template players (≥70% owned):")
+    print("\nTemplate players (≥70% owned):")
     for name, count, pct in template:
         print(f"  {count:>3}/{total_managers}  {pct:>5.1f}%  {name}")
 
-    print(f"\nDifferentials (5-25% owned):")
+    print("\nDifferentials (5-25% owned):")
     for name, count, pct in differentials:
         print(f"  {count:>3}/{total_managers}  {pct:>5.1f}%  {name}")
