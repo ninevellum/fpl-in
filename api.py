@@ -4,7 +4,6 @@ from fastapi import FastAPI
 from fpl import (
     current_gameweek,
     get_player_lookup,
-    get_league_managers,
     league_ownership,
     top_players,
 )
@@ -32,9 +31,7 @@ def top():
 def differentials(league_id: int):
     gw = current_gameweek()
     players = get_player_lookup()
-    counts = league_ownership(league_id, gw)
-    total_managers = len(get_league_managers(league_id))
-
+    counts, total_managers = league_ownership(league_id, gw)
     differentials = []
     template = []
     for player_id, count in counts.items():

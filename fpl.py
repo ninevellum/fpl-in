@@ -36,14 +36,14 @@ def current_gameweek():
 
 def league_ownership(league_id, gameweek):
     """For each player, count how many managers in the league own them.
-    Returns dict mapping player_id -> count."""
+    Returns (counts, total_managers) where counts maps player_id -> count."""
     managers = get_league_managers(league_id)
     counts = {}
     for manager_id, _, _ in managers:
         picks = get_manager_picks(manager_id, gameweek)
         for player_id in picks:
             counts[player_id] = counts.get(player_id, 0) + 1
-    return counts
+    return counts, len(managers)
 
 
 def top_players(n=10):
@@ -59,8 +59,7 @@ if __name__ == "__main__":
     players = get_player_lookup()
 
     league_id = 314
-    counts = league_ownership(league_id, gw)
-    total_managers = len(get_league_managers(league_id))
+    counts, total_managers = league_ownership(league_id, gw)
 
     differentials = []
     template = []
