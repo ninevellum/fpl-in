@@ -1,4 +1,5 @@
 """Fantasy Premier League data tools."""
+import asyncio
 import httpx
 
 
@@ -9,18 +10,21 @@ def get_player_lookup():
     return {p["id"]: p["web_name"] for p in data["elements"]}
 
 
-def get_league_managers(league_id):
+async def get_league_managers(league_id):
     """Fetch managers in a classic mini-league. Returns list of (manager_id, team_name, player_name) tuples."""
     url = f"https://fantasy.premierleague.com/api/leagues-classic/{league_id}/standings/"
-    data = httpx.get(url).json()
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        data = response.json()
     results = data["standings"]["results"]
     return [(m["entry"], m["entry_name"], m["player_name"]) for m in results]
 
 
-def get_manager_picks(manager_id, gameweek):
+async def get_manager_picks(client, manager_id, gameweek):
     """Return list of player IDs in this manager's squad for the given gameweek."""
     url = f"https://fantasy.premierleague.com/api/entry/{manager_id}/event/{gameweek}/picks/"
-    data = httpx.get(url).json()
+    response = await client.get(url)
+    data = response.json()
     return [pick["element"] for pick in data["picks"]]
 
 
@@ -34,13 +38,16 @@ def current_gameweek():
     return None
 
 
-def league_ownership(league_id, gameweek):
+async def league_ownership(league_id, gameweek):
     """For each player, count how many managers in the league own them.
     Returns (counts, total_managers) where counts maps player_id -> count."""
-    managers = get_league_managers(league_id)
+    managers = await get_league_managers(league_id)
+    async with httpx.AsyncClient() as client:
+        all_picks = await asyncio.gather(
+            *(get_manager_picks(client, manager_id, gameweek) for manager_id, _, _ in managers)
+        )
     counts = {}
-    for manager_id, _, _ in managers:
-        picks = get_manager_picks(manager_id, gameweek)
+    for picks in all_picks:
         for player_id in picks:
             counts[player_id] = counts.get(player_id, 0) + 1
     return counts, len(managers)
@@ -54,12 +61,12 @@ def top_players(n=10):
     return [(p["web_name"], p["total_points"]) for p in players[:n]]
 
 
-if __name__ == "__main__":
+async def _main():
     gw = current_gameweek()
     players = get_player_lookup()
 
     league_id = 314
-    counts, total_managers = league_ownership(league_id, gw)
+    counts, total_managers = await league_ownership(league_id, gw)
 
     differentials = []
     template = []
@@ -82,3 +89,7 @@ if __name__ == "__main__":
     print("\nDifferentials (5-25% owned):")
     for name, count, pct in differentials:
         print(f"  {count:>3}/{total_managers}  {pct:>5.1f}%  {name}")
+
+
+if __name__ == "__main__":
+    asyncio.run(_main())

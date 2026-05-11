@@ -28,10 +28,11 @@ def top():
 
 
 @app.get("/league/{league_id}/differentials")
-def differentials(league_id: int):
+async def differentials(league_id: int):
     gw = current_gameweek()
     players = get_player_lookup()
-    counts, total_managers = league_ownership(league_id, gw)
+    counts, total_managers = await league_ownership(league_id, gw)
+
     differentials = []
     template = []
     for player_id, count in counts.items():
