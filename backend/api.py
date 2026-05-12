@@ -39,7 +39,7 @@ def top():
 async def differentials(league_id: int):
     gw = current_gameweek()
     players = get_player_lookup()
-    counts, total_managers = await league_ownership(league_id, gw)
+    league_name, counts, total_managers = await league_ownership(league_id, gw)
 
     differentials = []
     template = []
@@ -61,6 +61,7 @@ async def differentials(league_id: int):
 
     return {
         "league_id": league_id,
+        "league_name": league_name,
         "gameweek": gw,
         "total_managers": total_managers,
         "template": template,

@@ -51,7 +51,8 @@ def get_player_lookup():
 
 
 async def get_league_managers(league_id):
-    """Fetch managers in a classic mini-league. Returns list of (manager_id, team_name, player_name) tuples."""
+    """Fetch a classic mini-league. Returns (league_name, managers) where
+    managers is a list of (manager_id, team_name, player_name) tuples."""
     cached = _cache_get(_league_managers_cache, league_id)
     if cached is not None:
         return cached
@@ -59,10 +60,12 @@ async def get_league_managers(league_id):
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
         data = response.json()
+    league_name = data["league"]["name"]
     results = data["standings"]["results"]
     managers = [(m["entry"], m["entry_name"], m["player_name"]) for m in results]
-    _cache_set(_league_managers_cache, league_id, managers)
-    return managers
+    payload = (league_name, managers)
+    _cache_set(_league_managers_cache, league_id, payload)
+    return payload
 
 
 async def get_manager_picks(client, manager_id, gameweek):
@@ -90,8 +93,8 @@ def current_gameweek():
 
 async def league_ownership(league_id, gameweek):
     """For each player, count how many managers in the league own them.
-    Returns (counts, total_managers) where counts maps player_id -> count."""
-    managers = await get_league_managers(league_id)
+    Returns (league_name, counts, total_managers) where counts maps player_id -> count."""
+    league_name, managers = await get_league_managers(league_id)
     async with httpx.AsyncClient() as client:
         all_picks = await asyncio.gather(
             *(get_manager_picks(client, manager_id, gameweek) for manager_id, _, _ in managers)
@@ -100,8 +103,7 @@ async def league_ownership(league_id, gameweek):
     for picks in all_picks:
         for player_id in picks:
             counts[player_id] = counts.get(player_id, 0) + 1
-    return counts, len(managers)
-
+    return league_name, counts, len(managers)
 
 def top_players(n=10):
     """Return top n FPL players by total points."""
@@ -115,7 +117,7 @@ async def _main():
     players = get_player_lookup()
 
     league_id = 314
-    counts, total_managers = await league_ownership(league_id, gw)
+    league_name, counts, total_managers = await league_ownership(league_id, gw)
 
     differentials = []
     template = []
@@ -129,8 +131,8 @@ async def _main():
     differentials.sort(key=lambda x: x[1], reverse=True)
     template.sort(key=lambda x: x[1], reverse=True)
 
-    print(f"Gameweek {gw} — League {league_id} ({total_managers} managers)")
-
+    print(f"Gameweek {gw} — {league_name} ({total_managers} managers)")
+    
     print("\nTemplate players (≥70% owned):")
     for name, count, pct in template:
         print(f"  {count:>3}/{total_managers}  {pct:>5.1f}%  {name}")

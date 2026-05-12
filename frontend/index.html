@@ -125,7 +125,7 @@
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
 
-        meta.textContent = `Gameweek ${data.gameweek} — League ${data.league_id} (${data.total_managers} managers)`;
+        meta.textContent = `Gameweek ${data.gameweek} — ${data.league_name} (${data.total_managers} managers)`;
         renderRows(templateBody, data.template);
         renderRows(diffBody, data.differentials);
       } catch (err) {
