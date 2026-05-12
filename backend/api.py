@@ -1,5 +1,6 @@
 """FastAPI web service for FPL insights."""
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from fpl import (
     current_gameweek,
@@ -9,6 +10,13 @@ from fpl import (
 )
 
 app = FastAPI(title="FPL Insights", description="Fantasy Premier League data tools")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
