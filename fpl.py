@@ -1,37 +1,87 @@
 """Fantasy Premier League data tools."""
 import asyncio
+import time
 import httpx
+
+
+# --- Caching ---
+# Simple TTL cache: maps a key to (value, expires_at_timestamp).
+# Separate dict per data source so TTLs and key shapes stay independent.
+
+_TTL_SECONDS = 300  # 5 minutes — sensible default for FPL data
+
+_bootstrap_cache = {}       # key: "_" (single entry, no real key)
+_league_managers_cache = {} # key: league_id
+_manager_picks_cache = {}   # key: (manager_id, gameweek)
+
+
+def _cache_get(cache, key):
+    """Return cached value for key if present and unexpired, else None."""
+    entry = cache.get(key)
+    if entry is None:
+        return None
+    value, expires_at = entry
+    if time.time() > expires_at:
+        return None
+    return value
+
+
+def _cache_set(cache, key, value):
+    """Store value in cache with expiry _TTL_SECONDS from now."""
+    cache[key] = (value, time.time() + _TTL_SECONDS)
+
+
+# --- FPL data fetchers ---
+
+def _bootstrap():
+    """Fetch and cache the FPL bootstrap-static blob."""
+    cached = _cache_get(_bootstrap_cache, "_")
+    if cached is not None:
+        return cached
+    url = "https://fantasy.premierleague.com/api/bootstrap-static/"
+    data = httpx.get(url).json()
+    _cache_set(_bootstrap_cache, "_", data)
+    return data
 
 
 def get_player_lookup():
     """Return a dict mapping player_id -> web_name for all FPL players."""
-    url = "https://fantasy.premierleague.com/api/bootstrap-static/"
-    data = httpx.get(url).json()
+    data = _bootstrap()
     return {p["id"]: p["web_name"] for p in data["elements"]}
 
 
 async def get_league_managers(league_id):
     """Fetch managers in a classic mini-league. Returns list of (manager_id, team_name, player_name) tuples."""
+    cached = _cache_get(_league_managers_cache, league_id)
+    if cached is not None:
+        return cached
     url = f"https://fantasy.premierleague.com/api/leagues-classic/{league_id}/standings/"
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
         data = response.json()
     results = data["standings"]["results"]
-    return [(m["entry"], m["entry_name"], m["player_name"]) for m in results]
+    managers = [(m["entry"], m["entry_name"], m["player_name"]) for m in results]
+    _cache_set(_league_managers_cache, league_id, managers)
+    return managers
 
 
 async def get_manager_picks(client, manager_id, gameweek):
     """Return list of player IDs in this manager's squad for the given gameweek."""
+    key = (manager_id, gameweek)
+    cached = _cache_get(_manager_picks_cache, key)
+    if cached is not None:
+        return cached
     url = f"https://fantasy.premierleague.com/api/entry/{manager_id}/event/{gameweek}/picks/"
     response = await client.get(url)
     data = response.json()
-    return [pick["element"] for pick in data["picks"]]
+    picks = [pick["element"] for pick in data["picks"]]
+    _cache_set(_manager_picks_cache, key, picks)
+    return picks
 
 
 def current_gameweek():
     """Return the current gameweek number from FPL's bootstrap data."""
-    url = "https://fantasy.premierleague.com/api/bootstrap-static/"
-    data = httpx.get(url).json()
+    data = _bootstrap()
     for event in data["events"]:
         if event["is_current"]:
             return event["id"]
@@ -55,8 +105,7 @@ async def league_ownership(league_id, gameweek):
 
 def top_players(n=10):
     """Return top n FPL players by total points."""
-    url = "https://fantasy.premierleague.com/api/bootstrap-static/"
-    data = httpx.get(url).json()
+    data = _bootstrap()
     players = sorted(data["elements"], key=lambda p: p["total_points"], reverse=True)
     return [(p["web_name"], p["total_points"]) for p in players[:n]]
 
