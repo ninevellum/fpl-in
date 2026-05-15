@@ -52,7 +52,7 @@ def get_player_lookup():
 
 async def get_league_managers(league_id):
     """Fetch a classic mini-league. Returns (league_name, managers) where
-    managers is a list of (manager_id, team_name, player_name) tuples."""
+    managers is a list of (manager_id, team_name, player_name, total, event_total) tuples."""
     cached = _cache_get(_league_managers_cache, league_id)
     if cached is not None:
         return cached
@@ -62,14 +62,18 @@ async def get_league_managers(league_id):
         data = response.json()
     league_name = data["league"]["name"]
     results = data["standings"]["results"]
-    managers = [(m["entry"], m["entry_name"], m["player_name"]) for m in results]
+    managers = [
+        (m["entry"], m["entry_name"], m["player_name"], m["total"], m["event_total"])
+        for m in results
+    ]
     payload = (league_name, managers)
     _cache_set(_league_managers_cache, league_id, payload)
     return payload
 
 
 async def get_manager_picks(client, manager_id, gameweek):
-    """Return list of player IDs in this manager's squad for the given gameweek."""
+    """Return full pick dicts for this manager's squad. Each dict has:
+    element (player_id), position, multiplier, is_captain, is_vice_captain."""
     key = (manager_id, gameweek)
     cached = _cache_get(_manager_picks_cache, key)
     if cached is not None:
@@ -77,7 +81,7 @@ async def get_manager_picks(client, manager_id, gameweek):
     url = f"https://fantasy.premierleague.com/api/entry/{manager_id}/event/{gameweek}/picks/"
     response = await client.get(url)
     data = response.json()
-    picks = [pick["element"] for pick in data["picks"]]
+    picks = data["picks"]
     _cache_set(_manager_picks_cache, key, picks)
     return picks
 
@@ -97,13 +101,56 @@ async def league_ownership(league_id, gameweek):
     league_name, managers = await get_league_managers(league_id)
     async with httpx.AsyncClient() as client:
         all_picks = await asyncio.gather(
-            *(get_manager_picks(client, manager_id, gameweek) for manager_id, _, _ in managers)
+            *(get_manager_picks(client, manager_id, gameweek)
+              for manager_id, *_ in managers)
         )
     counts = {}
     for picks in all_picks:
-        for player_id in picks:
+        for pick in picks:
+            player_id = pick["element"]
             counts[player_id] = counts.get(player_id, 0) + 1
     return league_name, counts, len(managers)
+
+
+async def get_league_teams(league_id, gameweek):
+    """Return full squad info for every manager in the league.
+    Returns (league_name, teams) where each team dict has manager info,
+    points, captain, and full squad."""
+    league_name, managers = await get_league_managers(league_id)
+    players = get_player_lookup()
+
+    async with httpx.AsyncClient() as client:
+        all_picks = await asyncio.gather(
+            *(get_manager_picks(client, manager_id, gameweek)
+              for manager_id, *_ in managers)
+        )
+
+    teams = []
+    for (manager_id, team_name, player_name, total, event_total), picks in zip(managers, all_picks):
+        captain_id = next((p["element"] for p in picks if p["is_captain"]), None)
+        squad = [
+            {
+                "name": players.get(p["element"], "Unknown"),
+                "is_captain": p["is_captain"],
+                "is_vice_captain": p["is_vice_captain"],
+                "position": p["position"],   # 1–11 = starting, 12–15 = bench
+                "multiplier": p["multiplier"],
+            }
+            for p in picks
+        ]
+        teams.append({
+            "manager_id": manager_id,
+            "team_name": team_name,
+            "player_name": player_name,
+            "total_points": total,
+            "event_points": event_total,
+            "captain": players.get(captain_id, "Unknown") if captain_id else None,
+            "squad": squad,
+        })
+
+    teams.sort(key=lambda t: t["total_points"], reverse=True)
+    return league_name, teams
+
 
 def top_players(n=10):
     """Return top n FPL players by total points."""
