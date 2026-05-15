@@ -56,6 +56,54 @@
     td.num { text-align: right; font-variant-numeric: tabular-nums; }
     .loading { color: #888; font-style: italic; }
     .error { color: #ef5350; }
+
+    /* Teams section */
+    .team-row { cursor: pointer; }
+    .team-row:hover { background: #1a1f26; }
+    .team-row td:first-child::before {
+      content: "▸";
+      display: inline-block;
+      width: 1em;
+      color: #888;
+      transition: transform 0.15s;
+    }
+    .team-row.expanded td:first-child::before {
+      transform: rotate(90deg);
+    }
+    .squad-row td { padding: 0; border-bottom: none; }
+    .squad-inner {
+      background: #1a1f26;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid #2a2f36;
+    }
+    .squad-inner h3 {
+      margin: 0 0 0.5rem 0;
+      font-size: 0.85rem;
+      color: #888;
+      text-transform: uppercase;
+      font-weight: normal;
+    }
+    .squad-list {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 0.75rem 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 0.25rem;
+    }
+    .squad-list li { color: #e6e6e6; font-size: 0.9rem; }
+    .squad-list li.bench { color: #888; }
+    .badge {
+      display: inline-block;
+      background: #ffb74d;
+      color: #0f1419;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0 0.3rem;
+      border-radius: 3px;
+      margin-left: 0.25rem;
+    }
+    .badge.vc { background: #4fc3f7; }
   </style>
 </head>
 <body>
@@ -93,8 +141,28 @@
     </table>
   </section>
 
+  <section>
+    <h2>League standings</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Manager</th>
+          <th>Captain</th>
+          <th class="num">GW</th>
+          <th class="num">Total</th>
+        </tr>
+      </thead>
+      <tbody id="teams-body">
+        <tr><td colspan="4" class="loading">Loading…</td></tr>
+      </tbody>
+    </table>
+  </section>
+
   <script>
-    const API = "https://fpl-in.fly.dev";
+    const API = ["localhost", "127.0.0.1"].includes(window.location.hostname)
+      ? "http://localhost:8000"
+      : "https://fpl-in.fly.dev";
+
     const DEFAULT_LEAGUE_ID = 314;
 
     const input = document.getElementById("league-input");
@@ -102,6 +170,7 @@
     const meta = document.getElementById("meta");
     const templateBody = document.getElementById("template-body");
     const diffBody = document.getElementById("differentials-body");
+    const teamsBody = document.getElementById("teams-body");
 
     function getLeagueFromUrl() {
       const params = new URLSearchParams(window.location.search);
@@ -119,19 +188,28 @@
       meta.textContent = `Loading league ${leagueId}…`;
       templateBody.innerHTML = `<tr><td colspan="3" class="loading">Loading…</td></tr>`;
       diffBody.innerHTML = `<tr><td colspan="3" class="loading">Loading…</td></tr>`;
+      teamsBody.innerHTML = `<tr><td colspan="4" class="loading">Loading…</td></tr>`;
 
       try {
-        const response = await fetch(`${API}/league/${leagueId}/differentials`);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
+        const [diffResponse, teamsResponse] = await Promise.all([
+          fetch(`${API}/league/${leagueId}/differentials`),
+          fetch(`${API}/league/${leagueId}/teams`),
+        ]);
+        if (!diffResponse.ok) throw new Error(`differentials: HTTP ${diffResponse.status}`);
+        if (!teamsResponse.ok) throw new Error(`teams: HTTP ${teamsResponse.status}`);
 
-        meta.textContent = `Gameweek ${data.gameweek} — ${data.league_name} (${data.total_managers} managers)`;
-        renderRows(templateBody, data.template);
-        renderRows(diffBody, data.differentials);
+        const diffData = await diffResponse.json();
+        const teamsData = await teamsResponse.json();
+
+        meta.textContent = `Gameweek ${diffData.gameweek} — ${diffData.league_name} (${diffData.total_managers} managers)`;
+        renderRows(templateBody, diffData.template);
+        renderRows(diffBody, diffData.differentials);
+        renderTeams(teamsBody, teamsData.teams);
       } catch (err) {
         meta.innerHTML = `<span class="error">Failed to load league ${leagueId}: ${err.message}</span>`;
         templateBody.innerHTML = "";
         diffBody.innerHTML = "";
+        teamsBody.innerHTML = "";
       }
     }
 
@@ -152,6 +230,57 @@
       }
     }
 
+    function renderTeams(tbody, teams) {
+      tbody.innerHTML = "";
+      if (teams.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" class="loading">No teams found.</td></tr>`;
+        return;
+      }
+      for (const team of teams) {
+        const row = document.createElement("tr");
+        row.className = "team-row";
+        row.innerHTML = `
+          <td>${team.player_name} <span style="color:#888">— ${team.team_name}</span></td>
+          <td>${team.captain ?? "—"}</td>
+          <td class="num">${team.event_points}</td>
+          <td class="num">${team.total_points}</td>
+        `;
+
+        const squadRow = document.createElement("tr");
+        squadRow.className = "squad-row";
+        squadRow.style.display = "none";
+        squadRow.innerHTML = `<td colspan="4">${renderSquadHTML(team.squad)}</td>`;
+
+        row.addEventListener("click", () => {
+          const isOpen = squadRow.style.display !== "none";
+          squadRow.style.display = isOpen ? "none" : "table-row";
+          row.classList.toggle("expanded", !isOpen);
+        });
+
+        tbody.appendChild(row);
+        tbody.appendChild(squadRow);
+      }
+    }
+
+    function renderSquadHTML(squad) {
+      const starters = squad.filter(p => p.position <= 11);
+      const bench = squad.filter(p => p.position > 11);
+      const playerHTML = (p) => {
+        let badge = "";
+        if (p.is_captain) badge = `<span class="badge">C</span>`;
+        else if (p.is_vice_captain) badge = `<span class="badge vc">VC</span>`;
+        return `<li class="${p.position > 11 ? "bench" : ""}">${p.name}${badge}</li>`;
+      };
+      return `
+        <div class="squad-inner">
+          <h3>Starting XI</h3>
+          <ul class="squad-list">${starters.map(playerHTML).join("")}</ul>
+          <h3>Bench</h3>
+          <ul class="squad-list">${bench.map(playerHTML).join("")}</ul>
+        </div>
+      `;
+    }
+
     function handleLoad() {
       const leagueId = parseInt(input.value, 10);
       if (!Number.isInteger(leagueId) || leagueId < 1) {
@@ -167,7 +296,6 @@
       if (e.key === "Enter") handleLoad();
     });
 
-    // Initial load: from URL or default
     const initialLeague = getLeagueFromUrl();
     input.value = initialLeague;
     load(initialLeague);
