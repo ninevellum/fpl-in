@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from fpl import (
     current_gameweek,
+    get_league_teams,
     get_player_lookup,
     league_ownership,
     top_players,
@@ -66,4 +67,17 @@ async def differentials(league_id: int):
         "total_managers": total_managers,
         "template": template,
         "differentials": differentials,
+    }
+
+
+@app.get("/league/{league_id}/teams")
+async def teams(league_id: int):
+    gw = current_gameweek()
+    league_name, team_list = await get_league_teams(league_id, gw)
+    return {
+        "league_id": league_id,
+        "league_name": league_name,
+        "gameweek": gw,
+        "total_managers": len(team_list),
+        "teams": team_list,
     }
