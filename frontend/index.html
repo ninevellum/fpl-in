@@ -213,8 +213,7 @@
         let badge = "";
         if (p.is_captain) badge = `<span class="badge">C</span>`;
         else if (p.is_vice_captain) badge = `<span class="badge vc">VC</span>`;
-        return `<li class="${p.position > 11 ? "bench" : ""}">${p.name}${badge}</li>`;
-      };
+return `<li class="${p.position > 11 ? "bench" : ""}">${p.name} <span style="color:#888">(${p.event_points})</span>${badge}</li>`;      };
       return `
         <div class="squad-inner">
           <h3>Starting XI</h3>

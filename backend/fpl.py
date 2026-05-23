@@ -50,6 +50,12 @@ def get_player_lookup():
     return {p["id"]: p["web_name"] for p in data["elements"]}
 
 
+def get_player_event_points():
+    """Return a dict mapping player_id -> event_points (current GW score)."""
+    data = _bootstrap()
+    return {p["id"]: p["event_points"] for p in data["elements"]}
+
+
 async def get_league_managers(league_id):
     """Fetch a classic mini-league. Returns (league_name, managers) where
     managers is a list of (manager_id, team_name, player_name, total, event_total) tuples."""
@@ -118,6 +124,7 @@ async def get_league_teams(league_id, gameweek):
     points, captain, and full squad."""
     league_name, managers = await get_league_managers(league_id)
     players = get_player_lookup()
+    event_points = get_player_event_points()
 
     async with httpx.AsyncClient() as client:
         all_picks = await asyncio.gather(
@@ -131,6 +138,7 @@ async def get_league_teams(league_id, gameweek):
         squad = [
             {
                 "name": players.get(p["element"], "Unknown"),
+                "event_points": event_points.get(p["element"], 0),
                 "is_captain": p["is_captain"],
                 "is_vice_captain": p["is_vice_captain"],
                 "position": p["position"],   # 1–11 = starting, 12–15 = bench
