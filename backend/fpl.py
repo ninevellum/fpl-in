@@ -13,6 +13,7 @@ _TTL_SECONDS = 300  # 5 minutes — sensible default for FPL data
 _bootstrap_cache = {}       # key: "_" (single entry, no real key)
 _league_managers_cache = {} # key: league_id
 _manager_picks_cache = {}   # key: (manager_id, gameweek)
+_event_live_cache = {}      # key: gameweek
 
 
 def _cache_get(cache, key):
@@ -55,6 +56,18 @@ def get_player_event_points():
     data = _bootstrap()
     return {p["id"]: p["event_points"] for p in data["elements"]}
 
+def get_event_live(gameweek):
+    """Return a dict mapping player_id -> live total_points for the gameweek.
+    Sourced from FPL's live endpoint, which updates during matches.
+    Sync + cached, mirroring _bootstrap: one shared fetch, not per-manager."""
+    cached = _cache_get(_event_live_cache, gameweek)
+    if cached is not None:
+        return cached
+    url = f"https://fantasy.premierleague.com/api/event/{gameweek}/live/"
+    data = httpx.get(url).json()
+    points = {el["id"]: el["stats"]["total_points"] for el in data["elements"]}
+    _cache_set(_event_live_cache, gameweek, points)
+    return points
 
 async def get_league_managers(league_id):
     """Fetch a classic mini-league. Returns (league_name, managers) where
@@ -124,7 +137,7 @@ async def get_league_teams(league_id, gameweek):
     points, captain, and full squad."""
     league_name, managers = await get_league_managers(league_id)
     players = get_player_lookup()
-    event_points = get_player_event_points()
+    live_points = get_event_live(gameweek)
 
     async with httpx.AsyncClient() as client:
         all_picks = await asyncio.gather(
@@ -135,10 +148,11 @@ async def get_league_teams(league_id, gameweek):
     teams = []
     for (manager_id, team_name, player_name, total, event_total), picks in zip(managers, all_picks):
         captain_id = next((p["element"] for p in picks if p["is_captain"]), None)
+        live_total = sum(live_points.get(p["element"], 0) * p["multiplier"] for p in picks)        
         squad = [
             {
                 "name": players.get(p["element"], "Unknown"),
-                "event_points": event_points.get(p["element"], 0),
+                "event_points": live_points.get(p["element"], 0),
                 "is_captain": p["is_captain"],
                 "is_vice_captain": p["is_vice_captain"],
                 "position": p["position"],   # 1–11 = starting, 12–15 = bench
@@ -152,8 +166,8 @@ async def get_league_teams(league_id, gameweek):
             "player_name": player_name,
             "total_points": total,
             "event_points": event_total,
-            "captain": players.get(captain_id, "Unknown") if captain_id else None,
-            "squad": squad,
+            "live_total": live_total,
+            "captain": players.get(captain_id, "Unknown") if captain_id else None,            "squad": squad,
         })
 
     teams.sort(key=lambda t: t["total_points"], reverse=True)
