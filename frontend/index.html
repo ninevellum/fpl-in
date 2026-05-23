@@ -118,30 +118,6 @@
   <p class="meta" id="meta">Loading…</p>
 
   <section>
-    <h2>Template players (≥70% owned)</h2>
-    <table>
-      <thead>
-        <tr><th>Player</th><th class="num">Owned</th><th class="num">%</th></tr>
-      </thead>
-      <tbody id="template-body">
-        <tr><td colspan="3" class="loading">Loading…</td></tr>
-      </tbody>
-    </table>
-  </section>
-
-  <section>
-    <h2>Differentials (5–25% owned)</h2>
-    <table>
-      <thead>
-        <tr><th>Player</th><th class="num">Owned</th><th class="num">%</th></tr>
-      </thead>
-      <tbody id="differentials-body">
-        <tr><td colspan="3" class="loading">Loading…</td></tr>
-      </tbody>
-    </table>
-  </section>
-
-  <section>
     <h2>League standings</h2>
     <table>
       <thead>
@@ -162,14 +138,11 @@
     const API = ["localhost", "127.0.0.1"].includes(window.location.hostname)
       ? "http://localhost:8000"
       : "https://fpl-in.fly.dev";
-
     const DEFAULT_LEAGUE_ID = 314;
 
     const input = document.getElementById("league-input");
     const button = document.getElementById("load-button");
     const meta = document.getElementById("meta");
-    const templateBody = document.getElementById("template-body");
-    const diffBody = document.getElementById("differentials-body");
     const teamsBody = document.getElementById("teams-body");
 
     function getLeagueFromUrl() {
@@ -186,47 +159,18 @@
 
     async function load(leagueId) {
       meta.textContent = `Loading league ${leagueId}…`;
-      templateBody.innerHTML = `<tr><td colspan="3" class="loading">Loading…</td></tr>`;
-      diffBody.innerHTML = `<tr><td colspan="3" class="loading">Loading…</td></tr>`;
       teamsBody.innerHTML = `<tr><td colspan="4" class="loading">Loading…</td></tr>`;
 
       try {
-        const [diffResponse, teamsResponse] = await Promise.all([
-          fetch(`${API}/league/${leagueId}/differentials`),
-          fetch(`${API}/league/${leagueId}/teams`),
-        ]);
-        if (!diffResponse.ok) throw new Error(`differentials: HTTP ${diffResponse.status}`);
-        if (!teamsResponse.ok) throw new Error(`teams: HTTP ${teamsResponse.status}`);
+        const response = await fetch(`${API}/league/${leagueId}/teams`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
 
-        const diffData = await diffResponse.json();
-        const teamsData = await teamsResponse.json();
-
-        meta.textContent = `Gameweek ${diffData.gameweek} — ${diffData.league_name} (${diffData.total_managers} managers)`;
-        renderRows(templateBody, diffData.template);
-        renderRows(diffBody, diffData.differentials);
-        renderTeams(teamsBody, teamsData.teams);
+        meta.textContent = `Gameweek ${data.gameweek} — ${data.league_name} (${data.total_managers} managers)`;
+        renderTeams(teamsBody, data.teams);
       } catch (err) {
         meta.innerHTML = `<span class="error">Failed to load league ${leagueId}: ${err.message}</span>`;
-        templateBody.innerHTML = "";
-        diffBody.innerHTML = "";
         teamsBody.innerHTML = "";
-      }
-    }
-
-    function renderRows(tbody, players) {
-      tbody.innerHTML = "";
-      if (players.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="3" class="loading">No players in this range.</td></tr>`;
-        return;
-      }
-      for (const p of players) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${p.name}</td>
-          <td class="num">${p.count}/${p.total}</td>
-          <td class="num">${p.ownership_pct}%</td>
-        `;
-        tbody.appendChild(tr);
       }
     }
 
