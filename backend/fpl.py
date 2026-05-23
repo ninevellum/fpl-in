@@ -51,11 +51,6 @@ def get_player_lookup():
     return {p["id"]: p["web_name"] for p in data["elements"]}
 
 
-def get_player_event_points():
-    """Return a dict mapping player_id -> event_points (current GW score)."""
-    data = _bootstrap()
-    return {p["id"]: p["event_points"] for p in data["elements"]}
-
 def get_event_live(gameweek):
     """Return a dict mapping player_id -> live total_points for the gameweek.
     Sourced from FPL's live endpoint, which updates during matches.
